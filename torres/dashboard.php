@@ -1,23 +1,44 @@
 <?php
 session_start();
+// Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
     header("Location: index.php");
     exit();
 }
-
+// Connect to database to get user data
 include 'db_connect.php';
 $user_id = $_SESSION['user_id'];
-
-// Fetch current user data
 $stmt = $conn->prepare("SELECT * FROM users WHERE id_number = ?");
 $stmt->bind_param("s", $user_id);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
 
+// ✅ FETCH ACTIVE SIT-IN SESSION
+$active_session = $conn->prepare("SELECT * FROM sit_in_records WHERE student_id = ? AND status = 'active' ORDER BY time_in DESC LIMIT 1");
+$active_session->bind_param("s", $user_id);
+$active_session->execute();
+$session_result = $active_session->get_result()->fetch_assoc();
+
+// Calculate remaining time
+$remaining_minutes = 0;
+$is_active_session = false;
+$time_elapsed = '';
+if ($session_result) {
+    $is_active_session = true;
+    $remaining_minutes = $session_result['remaining_session'];
+    
+    // Calculate elapsed time
+    $time_in = new DateTime($session_result['time_in']);
+    $now = new DateTime();
+    $diff = $time_in->diff($now);
+    $elapsed_minutes = ($diff->h * 60) + $diff->i;
+    $time_elapsed = $diff->h . 'h ' . $diff->i . 'm';
+}
+
 // ✅ Fetch announcements from database
 $announcements = $conn->query("SELECT * FROM announcements ORDER BY created_at DESC LIMIT 10");
 
-// ✅ Fetch TOP 10 Leaderboard (students with most rewards)
+// ✅ Fetch TOP 10 Leaderboard
 $leaderboard = $conn->query("SELECT id_number, first_name, last_name, program, rewards, total_sessions FROM users WHERE rewards > 0 ORDER BY rewards DESC, total_sessions DESC LIMIT 10");
 
 // ✅ Fetch current user's rank
@@ -41,107 +62,130 @@ while($ranked = $rank_query->fetch_assoc()) {
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
     <style>
-    /* Modern Leaderboard Styles */
-    .leaderboard-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 1rem;
-        box-shadow: 0 20px 60px rgba(102, 126, 234, 0.4);
-    }
-    .leaderboard-item {
-        transition: all 0.3s ease;
-        border-left: 4px solid transparent;
-    }
-    .leaderboard-item:hover {
-        transform: translateX(5px);
-        background: rgba(255,255,255,0.1);
-        border-left-color: #fbbf24;
-    }
-    .leaderboard-item.current-user {
-        background: rgba(251, 191, 36, 0.2);
-        border-left-color: #fbbf24;
-        animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4); }
-        50% { box-shadow: 0 0 0 10px rgba(251, 191, 36, 0); }
-    }
-    .rank-badge {
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        font-size: 14px;
-    }
-    .rank-1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: white; }
-    .rank-2 { background: linear-gradient(135deg, #94a3b8, #64748b); color: white; }
-    .rank-3 { background: linear-gradient(135deg, #b45309, #92400e); color: white; }
-    .rank-other { background: rgba(255,255,255,0.2); color: white; }
-    
-    /* ✅ FIXED: Added standard background-clip property */
-    .trophy-icon {
-        font-size: 2rem;
-        background: linear-gradient(135deg, #fbbf24, #f59e0b);
-        background-clip: text;              /* ✅ Standard property */
-        -webkit-background-clip: text;      /* ✅ WebKit prefix */
-        -webkit-text-fill-color: transparent;
-        animation: float 3s ease-in-out infinite;
-    }
-    @keyframes float {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(-10px); }
-    }
-    .points-badge {
-        background: linear-gradient(135deg, #fbbf24, #f59e0b);
-        color: white;
-        padding: 0.25rem 0.75rem;
-        border-radius: 9999px;
-        font-weight: bold;
-        font-size: 0.875rem;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.25rem;
-    }
-    
-    /* Custom Scrollbar */
-    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 10px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 10px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
-</style>
+        /* Modern Leaderboard Styles */
+        .leaderboard-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 1rem;
+            box-shadow: 0 20px 60px rgba(102, 126, 234, 0.4);
+        }
+        .leaderboard-item {
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+        .leaderboard-item:hover {
+            transform: translateX(5px);
+            background: rgba(255,255,255,0.1);
+            border-left-color: #fbbf24;
+        }
+        .leaderboard-item.current-user {
+            background: rgba(251, 191, 36, 0.2);
+            border-left-color: #fbbf24;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4); }
+            50% { box-shadow: 0 0 0 10px rgba(251, 191, 36, 0); }
+        }
+        .rank-badge {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .rank-1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: white; }
+        .rank-2 { background: linear-gradient(135deg, #94a3b8, #64748b); color: white; }
+        .rank-3 { background: linear-gradient(135deg, #b45309, #92400e); color: white; }
+        .rank-other { background: rgba(255,255,255,0.2); color: white; }
+        .trophy-icon {
+            font-size: 2rem;
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: float 3s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .points-badge {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-weight: bold;
+            font-size: 0.875rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        /* Session Timer Styles */
+        .session-timer {
+            animation: pulse-session 2s infinite;
+        }
+        @keyframes pulse-session {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+    </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen font-sans">
-    <!-- Top Navbar -->
-    <nav class="bg-gradient-to-r from-blue-800 to-purple-800 text-white px-4 py-3 flex justify-between items-center shadow-lg">
-        <h1 class="font-bold text-lg flex items-center gap-2">
-            <i class="fa-solid fa-gauge"></i> Dashboard
-        </h1>
-        <div class="flex items-center gap-4">
-            <a href="#" class="hover:text-yellow-300 transition flex items-center gap-1 relative">
-                <i class="fa-solid fa-bell"></i> 
-                <span class="hidden md:inline">Notification</span>
-                <span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">3</span>
-            </a>
-            <a href="#" class="hover:text-yellow-300 transition hidden md:inline">Home</a>
-            <a href="edit_profile.php" class="hover:text-yellow-300 transition">Edit Profile</a>
+    <!-- Top Navbar with Session Timer -->
+    <nav class="bg-gradient-to-r from-blue-800 to-purple-800 text-white px-4 py-3 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <h1 class="font-bold text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-gauge"></i> Dashboard
+                </h1>
+                
+                <!-- ✅ REMAINING SESSION DISPLAY IN HEADER -->
+                <?php if ($is_active_session): ?>
+                <div class="session-timer bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
+                    <i class="fa-solid fa-clock text-yellow-300"></i>
+                    <span class="font-bold text-sm">
+                        <?php echo $remaining_minutes; ?> mins remaining
+                    </span>
+                    <span class="text-xs bg-white/20 px-2 py-0.5 rounded-full">
+                        Lab <?php echo $session_result['lab_room']; ?>
+                    </span>
+                </div>
+                <?php else: ?>
+                <div class="bg-gray-700/50 px-4 py-2 rounded-full flex items-center gap-2">
+                    <i class="fa-solid fa-circle-check text-green-400"></i>
+                    <span class="font-bold text-sm text-gray-300">No active session</span>
+                </div>
+                <?php endif; ?>
+            </div>
             
-            <!-- ✅ RESERVATION BUTTON -->
-            <a href="reservation.php" onclick="window.open('reservation.php', 'ReservationWindow', 'width=700,height=650,resizable=yes,scrollbars=yes'); return false;" 
-               class="hover:text-yellow-300 transition flex items-center gap-1 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded font-bold transition">
-                <i class="fa-solid fa-calendar-check"></i> Reservation
-            </a>
-            
-            <!-- ✅ FEEDBACK BUTTON - NEW! -->
-            <a href="feedback.php" onclick="window.open('feedback.php', 'FeedbackWindow', 'width=600,height=700,resizable=yes,scrollbars=yes'); return false;" 
-               class="hover:text-yellow-300 transition flex items-center gap-1 bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded font-bold transition">
-                <i class="fa-solid fa-comment-dots"></i> Feedback
-            </a>
-            
-            <a href="logout.php" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded font-bold transition">
-                <i class="fa-solid fa-right-from-bracket mr-1"></i>Log out
-            </a>
+            <div class="flex items-center gap-4">
+                <a href="#" class="hover:text-yellow-300 transition flex items-center gap-1 relative">
+                    <i class="fa-solid fa-bell"></i> 
+                    <span class="hidden md:inline">Notification</span>
+                    <span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">3</span>
+                </a>
+                <a href="#" class="hover:text-yellow-300 transition hidden md:inline">Home</a>
+                <a href="edit_profile.php" class="hover:text-yellow-300 transition">Edit Profile</a>
+                
+                <!-- Reservation Button -->
+                <a href="reservation.php" onclick="window.open('reservation.php', 'ReservationWindow', 'width=700,height=650,resizable=yes,scrollbars=yes'); return false;" 
+                   class="hover:text-yellow-300 transition flex items-center gap-1 bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded font-bold transition">
+                    <i class="fa-solid fa-calendar-check"></i> Reservation
+                </a>
+                
+                <!-- Feedback Button -->
+                <a href="feedback.php" onclick="window.open('feedback.php', 'FeedbackWindow', 'width=600,height=700,resizable=yes,scrollbars=yes'); return false;" 
+                   class="hover:text-yellow-300 transition flex items-center gap-1 bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded font-bold transition">
+                    <i class="fa-solid fa-comment-dots"></i> Feedback
+                </a>
+                
+                <a href="logout.php" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded font-bold transition">
+                    <i class="fa-solid fa-right-from-bracket mr-1"></i>Log out
+                </a>
+            </div>
         </div>
     </nav>
     
@@ -186,12 +230,19 @@ while($ranked = $rank_query->fetch_assoc()) {
                             <span class="font-bold text-purple-700">#<?php echo $user_rank; ?></span>
                         </div>
                         <?php endif; ?>
+                        <!-- ✅ Show Active Session in Profile -->
+                        <?php if ($is_active_session): ?>
+                        <div class="flex justify-between items-center p-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
+                            <span><i class="fa-solid fa-clock mr-2 text-green-600"></i>Session</span>
+                            <span class="font-bold text-green-700"><?php echo $remaining_minutes; ?> mins</span>
+                        </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
         </div>
         
-        <!-- ✅ LEADERBOARD CARD - Modern Design -->
+        <!-- LEADERBOARD CARD -->
         <div class="col-span-12 lg:col-span-5">
             <div class="leaderboard-card text-white p-6 h-full">
                 <div class="flex items-center justify-between mb-6">
@@ -206,18 +257,13 @@ while($ranked = $rank_query->fetch_assoc()) {
                     <?php if ($leaderboard->num_rows > 0): ?>
                         <?php $rank = 1; while($leader = $leaderboard->fetch_assoc()): ?>
                         <div class="leaderboard-item flex items-center gap-4 p-3 rounded-xl <?php echo $leader['id_number'] == $user_id ? 'current-user' : ''; ?>">
-                            <!-- Rank Badge -->
                             <div class="rank-badge rank-<?php echo $rank <= 3 ? $rank : 'other'; ?>">
                                 <?php echo $rank <= 3 ? ['🥇','🥈','🥉'][$rank-1] : '#' . $rank; ?>
                             </div>
-                            
-                            <!-- Avatar & Name -->
                             <div class="flex-1 min-w-0">
                                 <p class="font-semibold truncate"><?php echo $leader['first_name'] . ' ' . $leader['last_name']; ?></p>
                                 <p class="text-xs text-white/70 truncate"><?php echo $leader['program']; ?></p>
                             </div>
-                            
-                            <!-- Points -->
                             <div class="text-right">
                                 <span class="points-badge">
                                     <i class="fa-solid fa-star"></i>
@@ -235,7 +281,6 @@ while($ranked = $rank_query->fetch_assoc()) {
                     <?php endif; ?>
                 </div>
                 
-                <!-- How to Earn Points -->
                 <div class="mt-6 p-4 bg-white/10 rounded-xl">
                     <p class="text-sm font-semibold mb-2">💡 How to Earn Points:</p>
                     <ul class="text-xs text-white/80 space-y-1">
@@ -303,9 +348,8 @@ while($ranked = $rank_query->fetch_assoc()) {
         </div>
     </div>
     
-    <!-- ✅ FLOATING ACTION BUTTONS - Reservation + Feedback -->
+    <!-- Floating Action Buttons -->
     <div class="fixed bottom-6 right-6 flex flex-col gap-3 z-50">
-        <!-- Reservation Button -->
         <a href="reservation.php" onclick="window.open('reservation.php', 'ReservationWindow', 'width=700,height=650,resizable=yes,scrollbars=yes'); return false;"
            class="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white p-4 rounded-full shadow-2xl transition transform hover:scale-110 flex items-center gap-2"
            title="Reserve a PC">
@@ -313,7 +357,6 @@ while($ranked = $rank_query->fetch_assoc()) {
             <span class="hidden md:inline font-semibold">Reserve</span>
         </a>
         
-        <!-- ✅ FEEDBACK BUTTON - NEW! -->
         <a href="feedback.php" onclick="window.open('feedback.php', 'FeedbackWindow', 'width=600,height=700,resizable=yes,scrollbars=yes'); return false;"
            class="bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white p-4 rounded-full shadow-2xl transition transform hover:scale-110 flex items-center gap-2"
            title="Submit Feedback">
