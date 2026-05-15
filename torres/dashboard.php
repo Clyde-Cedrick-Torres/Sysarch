@@ -19,24 +19,66 @@ $active_session->bind_param("s", $user_id);
 $active_session->execute();
 $session_result = $active_session->get_result()->fetch_assoc();
 
-// Calculate remaining time
-$remaining_minutes = 0;
+// Calculate remaining time dynamically
+$remaining_seconds = 0;
 $is_active_session = false;
-$time_elapsed = '';
+$end_timestamp = 0;
+$original_minutes = 0;
+
 if ($session_result) {
     $is_active_session = true;
-    $remaining_minutes = $session_result['remaining_session'];
+    $original_minutes = (int)$session_result['remaining_session'];
+    $time_in = strtotime($session_result['time_in']);
+    $end_timestamp = $time_in + ($original_minutes * 60);
+    $current_timestamp = time();
+    $remaining_seconds = max(0, $end_timestamp - $current_timestamp);
     
-    // Calculate elapsed time
-    $time_in = new DateTime($session_result['time_in']);
-    $now = new DateTime();
-    $diff = $time_in->diff($now);
-    $elapsed_minutes = ($diff->h * 60) + $diff->i;
-    $time_elapsed = $diff->h . 'h ' . $diff->i . 'm';
+    // Safety check
+    if ($remaining_seconds > ($original_minutes * 60)) {
+        $remaining_seconds = $original_minutes * 60;
+    }
 }
 
-// ✅ Fetch announcements from database
-$announcements = $conn->query("SELECT * FROM announcements ORDER BY created_at DESC LIMIT 10");
+// ✅ NOTIFICATION SYSTEM - Fetch data from database
+// Fetch announcements from database (last 7 days)
+$announcements = $conn->query("SELECT * FROM announcements WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) ORDER BY created_at DESC LIMIT 10");
+
+// Fetch user's recent reservations
+$user_reservations = $conn->prepare("SELECT * FROM reservations WHERE student_id = ? ORDER BY created_at DESC LIMIT 5");
+$user_reservations->bind_param("s", $user_id);
+$user_reservations->execute();
+$reservations_result = $user_reservations->get_result();
+
+// Fetch user's feedback responses
+$user_feedback = $conn->prepare("SELECT * FROM feedback WHERE student_id = ? AND admin_response IS NOT NULL ORDER BY updated_at DESC LIMIT 5");
+$user_feedback->bind_param("s", $user_id);
+$user_feedback->execute();
+$feedback_result = $user_feedback->get_result();
+
+// Count unread notifications
+$unread_count = 0;
+
+// Count new announcements (last 7 days)
+$recent_announcements = $conn->query("SELECT COUNT(*) as count FROM announcements WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)")->fetch_assoc()['count'];
+$unread_count += $recent_announcements;
+
+// Count pending reservations
+$pending_reservations = $conn->prepare("SELECT COUNT(*) as count FROM reservations WHERE student_id = ? AND status = 'pending'");
+$pending_reservations->bind_param("s", $user_id);
+$pending_reservations->execute();
+$unread_count += $pending_reservations->get_result()->fetch_assoc()['count'];
+
+// Count approved reservations
+$approved_reservations = $conn->prepare("SELECT COUNT(*) as count FROM reservations WHERE student_id = ? AND status = 'approved'");
+$approved_reservations->bind_param("s", $user_id);
+$approved_reservations->execute();
+$unread_count += $approved_reservations->get_result()->fetch_assoc()['count'];
+
+// Count feedback with responses
+$feedback_responses = $conn->prepare("SELECT COUNT(*) as count FROM feedback WHERE student_id = ? AND admin_response IS NOT NULL AND updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
+$feedback_responses->bind_param("s", $user_id);
+$feedback_responses->execute();
+$unread_count += $feedback_responses->get_result()->fetch_assoc()['count'];
 
 // ✅ Fetch TOP 10 Leaderboard
 $leaderboard = $conn->query("SELECT id_number, first_name, last_name, program, rewards, total_sessions FROM users WHERE rewards > 0 ORDER BY rewards DESC, total_sessions DESC LIMIT 10");
@@ -131,10 +173,56 @@ while($ranked = $rank_query->fetch_assoc()) {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.8; }
         }
+        /* Notification Dropdown Animation */
+        .notification-dropdown {
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.3s ease;
+            pointer-events: none;
+        }
+        .notification-dropdown.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        .notification-item {
+            transition: background-color 0.2s ease;
+        }
+        .notification-item:hover {
+            background-color: #f3f4f6;
+        }
+        .notification-item.unread {
+            background-color: #eff6ff;
+            border-left: 3px solid #3b82f6;
+        }
+        /* Pulse animation for notification bell */
+        @keyframes pulse-notification {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        .notification-badge {
+            animation: pulse-notification 2s infinite;
+        }
+        /* Timer warning styles */
+        .timer-warning {
+            animation: blink-warning 1s infinite;
+            background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+        }
+        @keyframes blink-warning {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        /* Custom scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen font-sans">
-    <!-- Top Navbar with Session Timer -->
+    <!-- Top Navbar with Session Timer & Notifications -->
     <nav class="bg-gradient-to-r from-blue-800 to-purple-800 text-white px-4 py-3 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
             <div class="flex items-center gap-4">
@@ -142,17 +230,20 @@ while($ranked = $rank_query->fetch_assoc()) {
                     <i class="fa-solid fa-gauge"></i> Dashboard
                 </h1>
                 
-                <!-- ✅ REMAINING SESSION DISPLAY IN HEADER -->
+                <!-- ✅ REAL-TIME REMAINING SESSION DISPLAY -->
                 <?php if ($is_active_session): ?>
-                <div class="session-timer bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
+                <div id="sessionTimer" class="session-timer bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
                     <i class="fa-solid fa-clock text-yellow-300"></i>
-                    <span class="font-bold text-sm">
-                        <?php echo $remaining_minutes; ?> mins remaining
+                    <span class="font-bold text-sm" id="timerDisplay">
+                        <?php echo floor($remaining_seconds / 60); ?> mins <?php echo $remaining_seconds % 60; ?> secs
                     </span>
                     <span class="text-xs bg-white/20 px-2 py-0.5 rounded-full">
                         Lab <?php echo $session_result['lab_room']; ?>
                     </span>
                 </div>
+                <!-- Store end timestamp for JavaScript -->
+                <input type="hidden" id="endTimestamp" value="<?php echo $end_timestamp; ?>">
+                <input type="hidden" id="originalMinutes" value="<?php echo $original_minutes; ?>">
                 <?php else: ?>
                 <div class="bg-gray-700/50 px-4 py-2 rounded-full flex items-center gap-2">
                     <i class="fa-solid fa-circle-check text-green-400"></i>
@@ -162,11 +253,141 @@ while($ranked = $rank_query->fetch_assoc()) {
             </div>
             
             <div class="flex items-center gap-4">
-                <a href="#" class="hover:text-yellow-300 transition flex items-center gap-1 relative">
-                    <i class="fa-solid fa-bell"></i> 
-                    <span class="hidden md:inline">Notification</span>
-                    <span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">3</span>
-                </a>
+                <!-- ✅ ACCESSIBLE NOTIFICATION BUTTON -->
+                <div class="relative">
+                    <button 
+                        id="notificationButton" 
+                        class="hover:text-yellow-300 transition flex items-center gap-1 relative focus:outline-none focus:ring-2 focus:ring-yellow-400 rounded px-2 py-1"
+                        aria-label="Notifications"
+                        aria-expanded="false"
+                        aria-haspopup="true"
+                        onclick="toggleNotifications()"
+                    >
+                        <i class="fa-solid fa-bell"></i> 
+                        <span class="hidden md:inline">Notification</span> 
+                        <i class="fa-solid fa-chevron-down text-xs"></i>
+                        <?php if ($unread_count > 0): ?>
+                        <span class="notification-badge absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                            <?php echo $unread_count > 9 ? '9+' : $unread_count; ?>
+                        </span>
+                        <?php endif; ?>
+                    </button>
+                    
+                    <!-- ✅ NOTIFICATION DROPDOWN -->
+                    <div 
+                        id="notificationDropdown" 
+                        class="notification-dropdown absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-2xl border border-gray-200 z-50"
+                        role="menu"
+                        aria-labelledby="notificationButton"
+                    >
+                        <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+                            <h3 class="font-bold text-gray-800">
+                                <i class="fa-solid fa-bell mr-2 text-blue-600"></i>Notifications
+                            </h3>
+                            <?php if ($unread_count > 0): ?>
+                            <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full font-bold">
+                                <?php echo $unread_count; ?> new
+                            </span>
+                            <?php endif; ?>
+                        </div>
+                        
+                        <div class="max-h-96 overflow-y-auto">
+                            <?php 
+                            $hasNotifications = false;
+                            
+                            // Show recent announcements
+                            if ($announcements && $announcements->num_rows > 0):
+                                $announcements->data_seek(0);
+                                while($announcement = $announcements->fetch_assoc()): 
+                                    $hasNotifications = true;
+                            ?>
+                            <div class="notification-item unread p-4 border-b border-gray-100 cursor-pointer" onclick="viewAnnouncement()">
+                                <div class="flex items-start gap-3">
+                                    <div class="bg-blue-100 p-2 rounded-full">
+                                        <i class="fa-solid fa-bullhorn text-blue-600"></i>
+                                    </div>
+                                    <div class="flex-1">
+                                        <p class="text-sm font-semibold text-gray-800">New Announcement</p>
+                                        <p class="text-xs text-gray-600 mt-1"><?php echo htmlspecialchars(substr($announcement['content'], 0, 80)) . (strlen($announcement['content']) > 80 ? '...' : ''); ?></p>
+                                        <p class="text-xs text-gray-400 mt-1">
+                                            <i class="fa-solid fa-clock mr-1"></i><?php echo date('M d, Y', strtotime($announcement['created_at'])); ?>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php endwhile; endif; ?>
+                            
+                            <!-- Show reservation updates -->
+                            <?php 
+                            if ($reservations_result && $reservations_result->num_rows > 0):
+                                $reservations_result->data_seek(0);
+                                while($reservation = $reservations_result->fetch_assoc()): 
+                                    $hasNotifications = true;
+                                    $statusColor = $reservation['status'] == 'approved' ? 'green' : ($reservation['status'] == 'pending' ? 'yellow' : 'red');
+                                    $statusIcon = $reservation['status'] == 'approved' ? 'check-circle' : ($reservation['status'] == 'pending' ? 'clock' : 'times-circle');
+                            ?>
+                            <div class="notification-item p-4 border-b border-gray-100 cursor-pointer">
+                                <div class="flex items-start gap-3">
+                                    <div class="bg-<?php echo $statusColor; ?>-100 p-2 rounded-full">
+                                        <i class="fa-solid fa-<?php echo $statusIcon; ?> text-<?php echo $statusColor; ?>-600"></i>
+                                    </div>
+                                    <div class="flex-1">
+                                        <p class="text-sm font-semibold text-gray-800">
+                                            Reservation <?php echo ucfirst($reservation['status']); ?>
+                                        </p>
+                                        <p class="text-xs text-gray-600 mt-1">
+                                            Lab <?php echo $reservation['lab_room']; ?> • PC-<?php echo str_pad($reservation['computer_number'], 2, '0', STR_PAD_LEFT); ?>
+                                        </p>
+                                        <p class="text-xs text-gray-600">
+                                            <?php echo date('M d, Y', strtotime($reservation['reservation_date'])); ?> at <?php echo date('g:i A', strtotime($reservation['start_time'])); ?>
+                                        </p>
+                                        <p class="text-xs text-gray-400 mt-1">
+                                            <i class="fa-solid fa-clock mr-1"></i><?php echo date('M d', strtotime($reservation['created_at'])); ?>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php endwhile; endif; ?>
+                            
+                            <!-- Show feedback responses -->
+                            <?php 
+                            if ($feedback_result && $feedback_result->num_rows > 0):
+                                $feedback_result->data_seek(0);
+                                while($feedback = $feedback_result->fetch_assoc()): 
+                                    $hasNotifications = true;
+                            ?>
+                            <div class="notification-item unread p-4 border-b border-gray-100 cursor-pointer">
+                                <div class="flex items-start gap-3">
+                                    <div class="bg-purple-100 p-2 rounded-full">
+                                        <i class="fa-solid fa-comment-dots text-purple-600"></i>
+                                    </div>
+                                    <div class="flex-1">
+                                        <p class="text-sm font-semibold text-gray-800">Feedback Response</p>
+                                        <p class="text-xs text-gray-600 mt-1">Admin has responded to your feedback</p>
+                                        <p class="text-xs text-gray-400 mt-1">
+                                            <i class="fa-solid fa-clock mr-1"></i><?php echo date('M d', strtotime($feedback['updated_at'])); ?>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php endwhile; endif; ?>
+                            
+                            <?php if (!$hasNotifications): ?>
+                            <div class="p-8 text-center text-gray-500">
+                                <i class="fa-solid fa-bell-slash text-4xl mb-3 text-gray-300"></i>
+                                <p class="text-sm">No notifications yet</p>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                        
+                        <div class="p-3 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+                            <button class="w-full text-center text-sm text-blue-600 hover:text-blue-800 font-semibold" onclick="markAllAsRead()">
+                                Mark all as read
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
                 <a href="#" class="hover:text-yellow-300 transition hidden md:inline">Home</a>
                 <a href="edit_profile.php" class="hover:text-yellow-300 transition">Edit Profile</a>
                 
@@ -230,11 +451,10 @@ while($ranked = $rank_query->fetch_assoc()) {
                             <span class="font-bold text-purple-700">#<?php echo $user_rank; ?></span>
                         </div>
                         <?php endif; ?>
-                        <!-- ✅ Show Active Session in Profile -->
                         <?php if ($is_active_session): ?>
                         <div class="flex justify-between items-center p-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
                             <span><i class="fa-solid fa-clock mr-2 text-green-600"></i>Session</span>
-                            <span class="font-bold text-green-700"><?php echo $remaining_minutes; ?> mins</span>
+                            <span class="font-bold text-green-700" id="profileTimer"><?php echo floor($remaining_seconds / 60); ?>m <?php echo $remaining_seconds % 60; ?>s</span>
                         </div>
                         <?php endif; ?>
                     </div>
@@ -254,7 +474,7 @@ while($ranked = $rank_query->fetch_assoc()) {
                 </div>
                 
                 <div class="space-y-3 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
-                    <?php if ($leaderboard->num_rows > 0): ?>
+                    <?php if ($leaderboard && $leaderboard->num_rows > 0): ?>
                         <?php $rank = 1; while($leader = $leaderboard->fetch_assoc()): ?>
                         <div class="leaderboard-item flex items-center gap-4 p-3 rounded-xl <?php echo $leader['id_number'] == $user_id ? 'current-user' : ''; ?>">
                             <div class="rank-badge rank-<?php echo $rank <= 3 ? $rank : 'other'; ?>">
@@ -300,24 +520,29 @@ while($ranked = $rank_query->fetch_assoc()) {
                     <span class="font-bold">Announcements</span>
                 </div>
                 <div class="p-4 space-y-4 max-h-80 overflow-y-auto">
-                    <?php if ($announcements->num_rows > 0): ?>
-                        <?php while($announcement = $announcements->fetch_assoc()): ?>
-                        <div class="border-b border-gray-100 pb-3 last:border-b-0">
-                            <p class="text-xs text-gray-500 flex items-center gap-2">
-                                <i class="fa-solid fa-user-shield"></i>
-                                <?php echo htmlspecialchars($announcement['posted_by']); ?> • 
-                                <?php echo date('M d, Y', strtotime($announcement['created_at'])); ?>
-                            </p>
-                            <?php if (!empty($announcement['title'])): ?>
-                            <p class="font-semibold text-gray-800 mt-1"><?php echo htmlspecialchars($announcement['title']); ?></p>
-                            <?php endif; ?>
-                            <p class="text-sm mt-2 bg-gray-50 p-3 rounded-lg text-gray-700">
-                                <?php echo nl2br(htmlspecialchars($announcement['content'])); ?>
-                            </p>
-                        </div>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <p class="text-gray-500 text-center py-6 italic">📭 No announcements yet.</p>
+                    <?php 
+                    if ($announcements && $announcements->num_rows > 0):
+                        $announcements->data_seek(0);
+                        while($announcement = $announcements->fetch_assoc()): 
+                    ?>
+                    <div class="border-b border-gray-100 pb-3 last:border-b-0">
+                        <p class="text-xs text-gray-500 flex items-center gap-2">
+                            <i class="fa-solid fa-user-shield"></i>
+                            <?php echo htmlspecialchars($announcement['posted_by']); ?> • 
+                            <?php echo date('M d, Y', strtotime($announcement['created_at'])); ?>
+                        </p>
+                        <?php if (!empty($announcement['title'])): ?>
+                        <p class="font-semibold text-gray-800 mt-1"><?php echo htmlspecialchars($announcement['title']); ?></p>
+                        <?php endif; ?>
+                        <p class="text-sm mt-2 bg-gray-50 p-3 rounded-lg text-gray-700">
+                            <?php echo nl2br(htmlspecialchars($announcement['content'])); ?>
+                        </p>
+                    </div>
+                    <?php 
+                        endwhile; 
+                    else: 
+                    ?>
+                    <p class="text-gray-500 text-center py-6 italic">📭 No announcements yet.</p>
                     <?php endif; ?>
                 </div>
             </div>
@@ -364,12 +589,129 @@ while($ranked = $rank_query->fetch_assoc()) {
             <span class="hidden md:inline font-semibold">Feedback</span>
         </a>
     </div>
-    
-    <style>
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
-    </style>
+
+    <!-- ✅ JAVASCRIPT: Real-Time Timer + Notifications -->
+    <script>
+        // ============ NOTIFICATION FUNCTIONS ============
+        function toggleNotifications() {
+            const dropdown = document.getElementById('notificationDropdown');
+            const button = document.getElementById('notificationButton');
+            
+            dropdown.classList.toggle('show');
+            
+            const isExpanded = dropdown.classList.contains('show');
+            button.setAttribute('aria-expanded', isExpanded);
+        }
+        
+        function viewAnnouncement() {
+            const announcementsSection = document.querySelector('.col-span-12.lg\\:col-span-4');
+            if (announcementsSection) {
+                announcementsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                announcementsSection.classList.add('ring-2', 'ring-blue-500');
+                setTimeout(() => {
+                    announcementsSection.classList.remove('ring-2', 'ring-blue-500');
+                }, 2000);
+            }
+            toggleNotifications();
+        }
+        
+        function markAllAsRead() {
+            document.querySelectorAll('.notification-item.unread').forEach(item => {
+                item.classList.remove('unread');
+            });
+            
+            const badge = document.querySelector('.notification-badge');
+            if (badge) badge.remove();
+            
+            toggleNotifications();
+            showNotification('All notifications marked as read', 'success');
+        }
+        
+        function showNotification(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 transition-all transform ${
+                type === 'success' ? 'bg-green-500 text-white' : 'bg-blue-500 text-white'
+            }`;
+            toast.innerHTML = `<i class="fa-solid fa-${type === 'success' ? 'check-circle' : 'info-circle'} mr-2"></i>${message}`;
+            
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-x-full');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('notificationDropdown');
+            const button = document.getElementById('notificationButton');
+            
+            if (dropdown && !dropdown.classList.contains('hidden') && 
+                !dropdown.contains(event.target) && !button.contains(event.target)) {
+                toggleNotifications();
+            }
+        });
+        
+        // Keyboard accessibility
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                const dropdown = document.getElementById('notificationDropdown');
+                if (dropdown && dropdown.classList.contains('show')) {
+                    toggleNotifications();
+                }
+            }
+        });
+        
+        // ============ REAL-TIME COUNTDOWN TIMER ============
+        <?php if ($is_active_session): ?>
+        const endTimestamp = <?php echo $end_timestamp; ?> * 1000;
+        const originalMinutes = <?php echo $original_minutes; ?>;
+        
+        function updateTimer() {
+            const now = Date.now();
+            const remaining = Math.max(0, endTimestamp - now);
+            const remainingMinutes = Math.floor(remaining / 60000);
+            const remainingSeconds = Math.floor((remaining % 60000) / 1000);
+            
+            // Update header timer display
+            const timerDisplay = document.getElementById('timerDisplay');
+            const sessionTimer = document.getElementById('sessionTimer');
+            const profileTimer = document.getElementById('profileTimer');
+            
+            if (timerDisplay) {
+                if (remainingSeconds > 0) {
+                    timerDisplay.textContent = remainingMinutes + ' mins ' + remainingSeconds + ' secs';
+                } else {
+                    timerDisplay.textContent = 'Time\'s up!';
+                }
+            }
+            
+            // Update profile card timer
+            if (profileTimer) {
+                profileTimer.textContent = remainingMinutes + 'm ' + remainingSeconds + 's';
+            }
+            
+            // Warning when less than 5 minutes remaining
+            if (remaining < 300000 && remaining > 0) {
+                sessionTimer.classList.add('timer-warning');
+                sessionTimer.classList.remove('from-green-500', 'to-emerald-600');
+            }
+            
+            // Time's up
+            if (remaining <= 0) {
+                sessionTimer.classList.add('timer-warning');
+                sessionTimer.classList.remove('from-green-500', 'to-emerald-600');
+                if (timerDisplay) {
+                    timerDisplay.textContent = '⚠️ Session Expired!';
+                }
+            }
+        }
+        
+        // Update every second
+        setInterval(updateTimer, 1000);
+        updateTimer();
+        <?php endif; ?>
+    </script>
 </body>
 </html>
