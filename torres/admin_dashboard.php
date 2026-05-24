@@ -18,9 +18,6 @@ if (isset($_GET['add_reward'])) {
     exit();
 }
 
-
-
-
 // Handle checkout - also award reward point
 if (isset($_GET['checkout'])) {
     $sit_in_id = intval($_GET['checkout']);
@@ -43,6 +40,7 @@ if (isset($_GET['checkout'])) {
     header("Location: admin_dashboard.php?tab=current_sit_in&checkout_success=1&reward_given=1");
     exit();
 }
+
 // Get statistics
 $students_count = $conn->query("SELECT COUNT(*) as count FROM users")->fetch_assoc()['count'];
 $sit_in_count = $conn->query("SELECT COUNT(*) as count FROM sit_in_records WHERE status = 'active'")->fetch_assoc()['count'];
@@ -242,19 +240,15 @@ $tab = isset($_GET['tab']) ? $_GET['tab'] : 'dashboard';
                 <a href="?tab=students" class="hover:text-yellow-300 transition <?php echo $tab == 'students' ? 'text-yellow-300 font-bold' : ''; ?>">
                     <i class="fa-solid fa-users mr-1"></i>Students
                 </a>
-
-<a href="admin_reservations.php" class="hover:text-yellow-300 transition">
-    <i class="fa-solid fa-calendar-check mr-1"></i>Reservations
-</a>
-
+                <a href="admin_reservations.php" class="hover:text-yellow-300 transition">
+                    <i class="fa-solid fa-calendar-check mr-1"></i>Reservations
+                </a>
                 <a href="?tab=current_sit_in" class="hover:text-yellow-300 transition <?php echo $tab == 'current_sit_in' ? 'text-yellow-300 font-bold' : ''; ?>">
                     <i class="fa-solid fa-clock mr-1"></i>Current Sit-in
                 </a>
-
-<a href="admin_feedback_reports.php" class="hover:text-yellow-300 transition">
-    <i class="fa-solid fa-comments mr-1"></i>Feedback
-</a>
-
+                <a href="admin_feedback_reports.php" class="hover:text-yellow-300 transition">
+                    <i class="fa-solid fa-comments mr-1"></i>Feedback
+                </a>
                 <a href="logout.php" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg transition">
                     <i class="fa-solid fa-right-from-bracket mr-1"></i>Logout
                 </a>
@@ -525,22 +519,18 @@ $tab = isset($_GET['tab']) ? $_GET['tab'] : 'dashboard';
                 <h2 class="font-bold text-lg"><i class="fa-solid fa-chair mr-2"></i>Sit-in Entry Form</h2>
             </div>
             <div class="p-6">
-
-
- <!-- ✅ ADD CHECKOUT SUCCESS MESSAGE HERE ✅ -->
-        <?php if (isset($_GET['checkout_success']) && $_GET['checkout_success'] == '1'): ?>
-        <div class="mb-4 p-4 rounded-xl border-l-4 bg-green-50 border-green-500 text-green-700">
-            <div class="flex items-start">
-                <i class="fa-solid fa-check-circle mt-1 mr-3"></i>
-                <div>
-                    <p class="font-bold">Success!</p>
-                    <p>Student has been checked out. They can now sit in again.</p>
+                <!-- ✅ ADD CHECKOUT SUCCESS MESSAGE HERE ✅ -->
+                <?php if (isset($_GET['checkout_success']) && $_GET['checkout_success'] == '1'): ?>
+                <div class="mb-4 p-4 rounded-xl border-l-4 bg-green-50 border-green-500 text-green-700">
+                    <div class="flex items-start">
+                        <i class="fa-solid fa-check-circle mt-1 mr-3"></i>
+                        <div>
+                            <p class="font-bold">Success!</p>
+                            <p>Student has been checked out. They can now sit in again.</p>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
-        <?php endif; ?>
-
-
+                <?php endif; ?>
 
                 <?php if (isset($_GET['error'])): ?>
                 <div class="mb-4 p-4 rounded-xl border-l-4 <?php 
@@ -636,70 +626,70 @@ $tab = isset($_GET['tab']) ? $_GET['tab'] : 'dashboard';
 
         <?php if ($tab == 'students'): ?>
         <!-- Students Tab -->
-<div class="bg-white rounded-xl shadow-lg">
-    <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 rounded-t-xl flex justify-between items-center">
-        <h2 class="font-bold text-lg"><i class="fa-solid fa-users mr-2"></i>Student Information</h2>
-        <button onclick="document.getElementById('addStudentModal').classList.remove('hidden')" class="bg-white text-blue-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition">
-            <i class="fa-solid fa-user-plus mr-2"></i>Add Student
-        </button>
-    </div>
-    
-    <!-- Reward Success Message -->
-    <?php if (isset($_GET['reward_success']) && $_GET['reward_success'] == '1'): ?>
-    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 mx-6 mt-4 rounded-xl">
-        <i class="fa-solid fa-trophy mr-2"></i>✅ Reward point added successfully!
-    </div>
-    <?php endif; ?>
-    
-    <div class="p-6 overflow-x-auto">
-        <table class="w-full">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID Number</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Program</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Year</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">🏆 Rewards</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200">
-                <?php while($student = $students->fetch_assoc()): ?>
-                <tr class="hover:bg-gray-50 transition">
-                    <td class="px-6 py-4 font-medium"><?php echo $student['id_number']; ?></td>
-                    <td class="px-6 py-4"><?php echo $student['first_name'] . ' ' . $student['last_name']; ?></td>
-                    <td class="px-6 py-4"><?php echo $student['program']; ?></td>
-                    <td class="px-6 py-4"><?php echo $student['year_level']; ?></td>
-                    <td class="px-6 py-4">
-                        <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold 
-                            <?php echo $student['rewards'] >= 10 ? 'bg-yellow-100 text-yellow-800' : ''; ?>
-                            <?php echo $student['rewards'] >= 5 && $student['rewards'] < 10 ? 'bg-blue-100 text-blue-800' : ''; ?>
-                            <?php echo $student['rewards'] < 5 ? 'bg-gray-100 text-gray-800' : ''; ?>">
-                            <i class="fa-solid fa-star <?php echo $student['rewards'] > 0 ? 'text-yellow-500' : 'text-gray-400'; ?>"></i>
-                            <?php echo $student['rewards']; ?> pts
-                        </span>
-                    </td>
-                    <td class="px-6 py-4">
-                        <div class="flex gap-2">
-                            <!-- ✅ REWARD BUTTON -->
-                            <a href="?add_reward=<?php echo $student['id_number']; ?>" 
-                               class="inline-flex items-center gap-1 bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition shadow-md"
-                               onclick="return confirm('Give 1 reward point to <?php echo $student['first_name']; ?>?')">
-                                <i class="fa-solid fa-gift"></i> Reward
-                            </a>
-                            <a href="?delete_student=<?php echo $student['id_number']; ?>" 
-                               class="text-red-600 hover:text-red-800 px-2"
-                               onclick="return confirm('Delete this student?')">
-                                <i class="fa-solid fa-trash"></i>
-                            </a>
-                        </div>
-                    </td>
-                </tr>
-                <?php endwhile; ?>
-            </tbody>
-        </table>
-    </div>
-</div>
+        <div class="bg-white rounded-xl shadow-lg">
+            <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 rounded-t-xl flex justify-between items-center">
+                <h2 class="font-bold text-lg"><i class="fa-solid fa-users mr-2"></i>Student Information</h2>
+                <button onclick="document.getElementById('addStudentModal').classList.remove('hidden')" class="bg-white text-blue-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition">
+                    <i class="fa-solid fa-user-plus mr-2"></i>Add Student
+                </button>
+            </div>
+            
+            <!-- Reward Success Message -->
+            <?php if (isset($_GET['reward_success']) && $_GET['reward_success'] == '1'): ?>
+            <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 mx-6 mt-4 rounded-xl">
+                <i class="fa-solid fa-trophy mr-2"></i>✅ Reward point added successfully!
+            </div>
+            <?php endif; ?>
+            
+            <div class="p-6 overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID Number</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Program</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Year</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">🏆 Rewards</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        <?php while($student = $students->fetch_assoc()): ?>
+                        <tr class="hover:bg-gray-50 transition">
+                            <td class="px-6 py-4 font-medium"><?php echo $student['id_number']; ?></td>
+                            <td class="px-6 py-4"><?php echo $student['first_name'] . ' ' . $student['last_name']; ?></td>
+                            <td class="px-6 py-4"><?php echo $student['program']; ?></td>
+                            <td class="px-6 py-4"><?php echo $student['year_level']; ?></td>
+                            <td class="px-6 py-4">
+                                <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold 
+                                    <?php echo $student['rewards'] >= 10 ? 'bg-yellow-100 text-yellow-800' : ''; ?>
+                                    <?php echo $student['rewards'] >= 5 && $student['rewards'] < 10 ? 'bg-blue-100 text-blue-800' : ''; ?>
+                                    <?php echo $student['rewards'] < 5 ? 'bg-gray-100 text-gray-800' : ''; ?>">
+                                    <i class="fa-solid fa-star <?php echo $student['rewards'] > 0 ? 'text-yellow-500' : 'text-gray-400'; ?>"></i>
+                                    <?php echo $student['rewards']; ?> pts
+                                </span>
+                            </td>
+                            <td class="px-6 py-4">
+                                <div class="flex gap-2">
+                                    <!-- ✅ REWARD BUTTON -->
+                                    <a href="?add_reward=<?php echo $student['id_number']; ?>" 
+                                       class="inline-flex items-center gap-1 bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition shadow-md"
+                                       onclick="return confirm('Give 1 reward point to <?php echo $student['first_name']; ?>?')">
+                                        <i class="fa-solid fa-gift"></i> Reward
+                                    </a>
+                                    <a href="?delete_student=<?php echo $student['id_number']; ?>" 
+                                       class="text-red-600 hover:text-red-800 px-2"
+                                       onclick="return confirm('Delete this student?')">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
 
         <!-- Add Student Modal -->
         <div id="addStudentModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -769,72 +759,80 @@ $tab = isset($_GET['tab']) ? $_GET['tab'] : 'dashboard';
         <?php endif; ?>
 
         <?php if ($tab == 'current_sit_in'): ?>
-<!-- Current Sit-in Tab -->
-<div class="bg-white rounded-xl shadow-lg">
-    <div class="bg-gradient-to-r from-green-600 to-teal-600 text-white p-4 rounded-t-xl flex justify-between items-center">
-        <h2 class="font-bold text-lg"><i class="fa-solid fa-clock mr-2"></i>Current Sit-in Students</h2>
-        <?php if (isset($_GET['checkout_success']) && $_GET['checkout_success'] == '1'): ?>
-        <span class="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm">
-            <i class="fa-solid fa-check-circle mr-1"></i>Student checked out successfully!
-        </span>
-        <?php endif; ?>
-    </div>
-    <div class="p-6 overflow-x-auto">
-        <?php if ($current_sit_in->num_rows > 0): ?>
-        <table class="w-full">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID Number</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Student Name</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Purpose</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Language</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lab Room</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time In</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200">
-                <?php while($sitin = $current_sit_in->fetch_assoc()): ?>
-                <tr class="hover:bg-gray-50">
-                    <td class="px-6 py-4 font-medium"><?php echo $sitin['student_id']; ?></td>
-                    <td class="px-6 py-4"><?php echo $sitin['student_name']; ?></td>
-                    <td class="px-6 py-4"><?php echo $sitin['purpose']; ?></td>
-                    <td class="px-6 py-4">
-                        <span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800"><?php echo $sitin['programming_lang']; ?></span>
-                    </td>
-                    <td class="px-6 py-4">
-                        <span class="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">Lab <?php echo $sitin['lab_room']; ?></span>
-                    </td>
-                    <td class="px-6 py-4"><?php echo date('h:i A', strtotime($sitin['time_in'])); ?></td>
-                    <td class="px-6 py-4">
-                        <?php 
-                        $time_in = new DateTime($sitin['time_in']);
-                        $now = new DateTime();
-                        $diff = $time_in->diff($now);
-                        echo $diff->h . 'h ' . $diff->i . 'm';
-                        ?>
-                    </td>
-                    <td class="px-6 py-4">
-                        <a href="?checkout=<?php echo $sitin['id']; ?>" 
-                           class="inline-flex items-center gap-1 bg-orange-500 hover:bg-orange-600 text-white px-3 py-1 rounded-lg text-sm transition"
-                           onclick="return confirm('Check out <?php echo $sitin['student_name']; ?>? This will end their current session.')">
-                            <i class="fa-solid fa-right-from-bracket"></i> Checkout
-                        </a>
-                    </td>
-                </tr>
-                <?php endwhile; ?>
-            </tbody>
-        </table>
-        <?php else: ?>
-        <div class="text-center py-12">
-            <i class="fa-solid fa-chair text-gray-300 text-6xl mb-4"></i>
-            <p class="text-gray-500 text-lg">No active sit-in sessions.</p>
+        <!-- Current Sit-in Tab -->
+        <div class="bg-white rounded-xl shadow-lg">
+            <div class="bg-gradient-to-r from-green-600 to-teal-600 text-white p-4 rounded-t-xl flex justify-between items-center">
+                <h2 class="font-bold text-lg"><i class="fa-solid fa-clock mr-2"></i>Current Sit-in Students</h2>
+                
+                <!-- ✅ CSV EXPORT BUTTON -->
+                <a href="export_sit_in_csv.php" 
+                   class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition flex items-center gap-2">
+                    <i class="fa-solid fa-file-csv"></i>
+                    <span>Export CSV</span>
+                </a>
+                
+                <?php if (isset($_GET['checkout_success']) && $_GET['checkout_success'] == '1'): ?>
+                <span class="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm">
+                    <i class="fa-solid fa-check-circle mr-1"></i>Student checked out successfully!
+                </span>
+                <?php endif; ?>
+            </div>
+            <div class="p-6 overflow-x-auto">
+                <?php if ($current_sit_in->num_rows > 0): ?>
+                <table class="w-full">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID Number</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Student Name</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Purpose</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Language</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lab Room</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time In</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        <?php while($sitin = $current_sit_in->fetch_assoc()): ?>
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 font-medium"><?php echo $sitin['student_id']; ?></td>
+                            <td class="px-6 py-4"><?php echo $sitin['student_name']; ?></td>
+                            <td class="px-6 py-4"><?php echo $sitin['purpose']; ?></td>
+                            <td class="px-6 py-4">
+                                <span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800"><?php echo $sitin['programming_lang']; ?></span>
+                            </td>
+                            <td class="px-6 py-4">
+                                <span class="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">Lab <?php echo $sitin['lab_room']; ?></span>
+                            </td>
+                            <td class="px-6 py-4"><?php echo date('h:i A', strtotime($sitin['time_in'])); ?></td>
+                            <td class="px-6 py-4">
+                                <?php 
+                                $time_in = new DateTime($sitin['time_in']);
+                                $now = new DateTime();
+                                $diff = $time_in->diff($now);
+                                echo $diff->h . 'h ' . $diff->i . 'm';
+                                ?>
+                            </td>
+                            <td class="px-6 py-4">
+                                <a href="?checkout=<?php echo $sitin['id']; ?>" 
+                                   class="inline-flex items-center gap-1 bg-orange-500 hover:bg-orange-600 text-white px-3 py-1 rounded-lg text-sm transition"
+                                   onclick="return confirm('Check out <?php echo $sitin['student_name']; ?>? This will end their current session.')">
+                                    <i class="fa-solid fa-right-from-bracket"></i> Checkout
+                                </a>
+                            </td>
+                        </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                </table>
+                <?php else: ?>
+                <div class="text-center py-12">
+                    <i class="fa-solid fa-chair text-gray-300 text-6xl mb-4"></i>
+                    <p class="text-gray-500 text-lg">No active sit-in sessions.</p>
+                </div>
+                <?php endif; ?>
+            </div>
         </div>
         <?php endif; ?>
-    </div>
-</div>
-<?php endif; ?>
     </div>
 
     <!-- Chart.js Script -->
@@ -872,7 +870,6 @@ $tab = isset($_GET['tab']) ? $_GET['tab'] : 'dashboard';
             }
         }
     });
-</script>
     </script>
 
     <!-- Auto-populate Student Name Script -->

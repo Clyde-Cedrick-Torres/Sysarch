@@ -13,31 +13,11 @@ $stmt->bind_param("s", $user_id);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
 
-// ✅ FETCH ACTIVE SIT-IN SESSION
-$active_session = $conn->prepare("SELECT * FROM sit_in_records WHERE student_id = ? AND status = 'active' ORDER BY time_in DESC LIMIT 1");
-$active_session->bind_param("s", $user_id);
-$active_session->execute();
-$session_result = $active_session->get_result()->fetch_assoc();
-
-// Calculate remaining time dynamically
-$remaining_seconds = 0;
-$is_active_session = false;
-$end_timestamp = 0;
-$original_minutes = 0;
-
-if ($session_result) {
-    $is_active_session = true;
-    $original_minutes = (int)$session_result['remaining_session'];
-    $time_in = strtotime($session_result['time_in']);
-    $end_timestamp = $time_in + ($original_minutes * 60);
-    $current_timestamp = time();
-    $remaining_seconds = max(0, $end_timestamp - $current_timestamp);
-    
-    // Safety check
-    if ($remaining_seconds > ($original_minutes * 60)) {
-        $remaining_seconds = $original_minutes * 60;
-    }
-}
+// ✅ Fetch Sit-in History for this student
+$sit_in_history = $conn->prepare("SELECT * FROM sit_in_records WHERE student_id = ? ORDER BY time_in DESC LIMIT 10");
+$sit_in_history->bind_param("s", $user_id);
+$sit_in_history->execute();
+$history_result = $sit_in_history->get_result();
 
 // ✅ NOTIFICATION SYSTEM - Fetch data from database
 // Fetch announcements from database (last 7 days)
@@ -165,14 +145,6 @@ while($ranked = $rank_query->fetch_assoc()) {
             align-items: center;
             gap: 0.25rem;
         }
-        /* Session Timer Styles */
-        .session-timer {
-            animation: pulse-session 2s infinite;
-        }
-        @keyframes pulse-session {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.8; }
-        }
         /* Notification Dropdown Animation */
         .notification-dropdown {
             opacity: 0;
@@ -205,15 +177,6 @@ while($ranked = $rank_query->fetch_assoc()) {
         .notification-badge {
             animation: pulse-notification 2s infinite;
         }
-        /* Timer warning styles */
-        .timer-warning {
-            animation: blink-warning 1s infinite;
-            background: linear-gradient(135deg, #ef4444, #dc2626) !important;
-        }
-        @keyframes blink-warning {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
         /* Custom scrollbar */
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 10px; }
@@ -222,34 +185,13 @@ while($ranked = $rank_query->fetch_assoc()) {
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen font-sans">
-    <!-- Top Navbar with Session Timer & Notifications -->
+    <!-- Top Navbar with Notifications -->
     <nav class="bg-gradient-to-r from-blue-800 to-purple-800 text-white px-4 py-3 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
             <div class="flex items-center gap-4">
                 <h1 class="font-bold text-lg flex items-center gap-2">
                     <i class="fa-solid fa-gauge"></i> Dashboard
                 </h1>
-                
-                <!-- ✅ REAL-TIME REMAINING SESSION DISPLAY -->
-                <?php if ($is_active_session): ?>
-                <div id="sessionTimer" class="session-timer bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
-                    <i class="fa-solid fa-clock text-yellow-300"></i>
-                    <span class="font-bold text-sm" id="timerDisplay">
-                        <?php echo floor($remaining_seconds / 60); ?> mins <?php echo $remaining_seconds % 60; ?> secs
-                    </span>
-                    <span class="text-xs bg-white/20 px-2 py-0.5 rounded-full">
-                        Lab <?php echo $session_result['lab_room']; ?>
-                    </span>
-                </div>
-                <!-- Store end timestamp for JavaScript -->
-                <input type="hidden" id="endTimestamp" value="<?php echo $end_timestamp; ?>">
-                <input type="hidden" id="originalMinutes" value="<?php echo $original_minutes; ?>">
-                <?php else: ?>
-                <div class="bg-gray-700/50 px-4 py-2 rounded-full flex items-center gap-2">
-                    <i class="fa-solid fa-circle-check text-green-400"></i>
-                    <span class="font-bold text-sm text-gray-300">No active session</span>
-                </div>
-                <?php endif; ?>
             </div>
             
             <div class="flex items-center gap-4">
@@ -451,12 +393,6 @@ while($ranked = $rank_query->fetch_assoc()) {
                             <span class="font-bold text-purple-700">#<?php echo $user_rank; ?></span>
                         </div>
                         <?php endif; ?>
-                        <?php if ($is_active_session): ?>
-                        <div class="flex justify-between items-center p-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
-                            <span><i class="fa-solid fa-clock mr-2 text-green-600"></i>Session</span>
-                            <span class="font-bold text-green-700" id="profileTimer"><?php echo floor($remaining_seconds / 60); ?>m <?php echo $remaining_seconds % 60; ?>s</span>
-                        </div>
-                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -478,7 +414,7 @@ while($ranked = $rank_query->fetch_assoc()) {
                         <?php $rank = 1; while($leader = $leaderboard->fetch_assoc()): ?>
                         <div class="leaderboard-item flex items-center gap-4 p-3 rounded-xl <?php echo $leader['id_number'] == $user_id ? 'current-user' : ''; ?>">
                             <div class="rank-badge rank-<?php echo $rank <= 3 ? $rank : 'other'; ?>">
-                                <?php echo $rank <= 3 ? ['🥇','🥈','🥉'][$rank-1] : '#' . $rank; ?>
+                                <?php echo $rank <= 3 ? ['🥇','',''][$rank-1] : '#' . $rank; ?>
                             </div>
                             <div class="flex-1 min-w-0">
                                 <p class="font-semibold truncate"><?php echo $leader['first_name'] . ' ' . $leader['last_name']; ?></p>
@@ -548,15 +484,15 @@ while($ranked = $rank_query->fetch_assoc()) {
             </div>
         </div>
         
-        <!-- Rules & Regulations Card -->
-        <div class="col-span-12">
-            <div class="bg-white rounded-2xl shadow-lg border border-gray-200">
+        <!-- Rules & Sit-in History Row -->
+        <div class="col-span-12 lg:col-span-4">
+            <div class="bg-white rounded-2xl shadow-lg border border-gray-200 h-full">
                 <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 rounded-t-2xl flex items-center gap-2">
                     <i class="fa-solid fa-book"></i> 
-                    <span class="font-bold">Laboratory Rules & Regulations</span>
+                    <span class="font-bold">Laboratory Rules</span>
                 </div>
-                <div class="p-6 max-h-60 overflow-y-auto pr-2 text-sm text-gray-700">
-                    <ol class="list-decimal pl-5 space-y-2">
+                <div class="p-4 space-y-2 max-h-80 overflow-y-auto custom-scrollbar">
+                    <ol class="list-decimal pl-5 space-y-1.5 text-sm text-gray-700">
                         <li>Maintain silence and proper decorum inside the laboratory.</li>
                         <li>Mobile phones and personal equipment must be switched off.</li>
                         <li>Games are not allowed inside the lab.</li>
@@ -568,6 +504,77 @@ while($ranked = $rank_query->fetch_assoc()) {
                         <li>Log off before leaving to prevent unauthorized access.</li>
                         <li>Respect equipment; damage due to negligence will be charged.</li>
                     </ol>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ✅ SIT-IN HISTORY CARD -->
+        <div class="col-span-12 lg:col-span-4">
+            <div class="bg-white rounded-2xl shadow-lg border border-gray-200 h-full">
+                <div class="bg-gradient-to-r from-green-600 to-teal-600 text-white p-4 rounded-t-2xl flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left"></i> 
+                    <span class="font-bold">Sit-in History</span>
+                </div>
+                <div class="p-4 space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
+                    <?php if ($history_result->num_rows > 0): ?>
+                        <?php while($record = $history_result->fetch_assoc()): ?>
+                        <div class="border border-gray-200 rounded-lg p-3 hover:shadow-md transition bg-gray-50">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-bold <?php echo $record['status'] == 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-700'; ?>">
+                                            <?php echo ucfirst($record['status']); ?>
+                                        </span>
+                                        <span class="text-sm font-semibold text-gray-800">
+                                            <i class="fa-solid fa-chair mr-1 text-green-600"></i>
+                                            Lab <?php echo $record['lab_room']; ?>
+                                        </span>
+                                    </div>
+                                    <div class="text-xs text-gray-600 space-y-1">
+                                        <p>
+                                            <i class="fa-solid fa-code mr-1 text-blue-600"></i>
+                                            <strong>Purpose:</strong> <?php echo htmlspecialchars($record['purpose']); ?>
+                                        </p>
+                                        <p>
+                                            <i class="fa-solid fa-laptop-code mr-1 text-purple-600"></i>
+                                            <strong>Language:</strong> <?php echo $record['programming_lang']; ?>
+                                        </p>
+                                        <p>
+                                            <i class="fa-solid fa-calendar mr-1 text-red-600"></i>
+                                            <strong>Date:</strong> <?php echo date('M d, Y', strtotime($record['time_in'])); ?>
+                                        </p>
+                                        <p>
+                                            <i class="fa-solid fa-clock mr-1 text-orange-600"></i>
+                                            <strong>Time:</strong> <?php echo date('h:i A', strtotime($record['time_in'])); ?>
+                                        </p>
+                                        <?php if ($record['time_out']): ?>
+                                        <p>
+                                            <i class="fa-solid fa-clock mr-1 text-gray-600"></i>
+                                            <strong>End:</strong> <?php echo date('h:i A', strtotime($record['time_out'])); ?>
+                                        </p>
+                                        <?php 
+                                        $time_in = new DateTime($record['time_in']);
+                                        $time_out = new DateTime($record['time_out']);
+                                        $diff = $time_in->diff($time_out);
+                                        $duration = $diff->h . 'h ' . $diff->i . 'm';
+                                        ?>
+                                        <p class="pt-1 border-t border-gray-200 mt-1">
+                                            <i class="fa-solid fa-hourglass-half mr-1 text-teal-600"></i>
+                                            <strong>Duration:</strong> <?php echo $duration; ?>
+                                        </p>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endwhile; ?>
+                    <?php else: ?>
+                        <div class="text-center py-8">
+                            <i class="fa-solid fa-chair text-gray-300 text-4xl mb-3"></i>
+                            <p class="text-gray-500 text-sm">No sit-in history yet.</p>
+                            <p class="text-gray-400 text-xs mt-1">Start your first session!</p>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -590,7 +597,7 @@ while($ranked = $rank_query->fetch_assoc()) {
         </a>
     </div>
 
-    <!-- ✅ JAVASCRIPT: Real-Time Timer + Notifications -->
+    <!-- ✅ JAVASCRIPT: Notifications Only -->
     <script>
         // ============ NOTIFICATION FUNCTIONS ============
         function toggleNotifications() {
@@ -662,56 +669,6 @@ while($ranked = $rank_query->fetch_assoc()) {
                 }
             }
         });
-        
-        // ============ REAL-TIME COUNTDOWN TIMER ============
-        <?php if ($is_active_session): ?>
-        const endTimestamp = <?php echo $end_timestamp; ?> * 1000;
-        const originalMinutes = <?php echo $original_minutes; ?>;
-        
-        function updateTimer() {
-            const now = Date.now();
-            const remaining = Math.max(0, endTimestamp - now);
-            const remainingMinutes = Math.floor(remaining / 60000);
-            const remainingSeconds = Math.floor((remaining % 60000) / 1000);
-            
-            // Update header timer display
-            const timerDisplay = document.getElementById('timerDisplay');
-            const sessionTimer = document.getElementById('sessionTimer');
-            const profileTimer = document.getElementById('profileTimer');
-            
-            if (timerDisplay) {
-                if (remainingSeconds > 0) {
-                    timerDisplay.textContent = remainingMinutes + ' mins ' + remainingSeconds + ' secs';
-                } else {
-                    timerDisplay.textContent = 'Time\'s up!';
-                }
-            }
-            
-            // Update profile card timer
-            if (profileTimer) {
-                profileTimer.textContent = remainingMinutes + 'm ' + remainingSeconds + 's';
-            }
-            
-            // Warning when less than 5 minutes remaining
-            if (remaining < 300000 && remaining > 0) {
-                sessionTimer.classList.add('timer-warning');
-                sessionTimer.classList.remove('from-green-500', 'to-emerald-600');
-            }
-            
-            // Time's up
-            if (remaining <= 0) {
-                sessionTimer.classList.add('timer-warning');
-                sessionTimer.classList.remove('from-green-500', 'to-emerald-600');
-                if (timerDisplay) {
-                    timerDisplay.textContent = '⚠️ Session Expired!';
-                }
-            }
-        }
-        
-        // Update every second
-        setInterval(updateTimer, 1000);
-        updateTimer();
-        <?php endif; ?>
     </script>
 </body>
 </html>
